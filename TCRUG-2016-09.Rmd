@@ -1,5 +1,5 @@
 ---
-title: "Constructing function calls (TCRUG-2016-09)"
+title: "Constructing function calls for more optimal use of optim, and more (TCRUG-2016-09)"
 author: "Aaron Rendahl"
 date: "September 22, 2016"
 output: 
@@ -12,9 +12,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # About myself...
+* Manager of the Statistical Consulting Center at the University of Minnesota
+* Help researchers design their studies and analyze their data
+* Also work with external companies, data analytics, etc.
+* PhD in Statistics (so not a programmer...)
+* But have used R since around 2005
 
 # how does one call a function programatically?
-with call and do.call
+### with call and do.call
 
 say I have a function to add two numbers
 ```{r}
@@ -22,6 +27,7 @@ myf <- function(x, y) x + y
 myf(1, 1)
 ```
 
+### do.call 
 do.call evaluates the function "what", with the arguments "args" (supplied as a list)
 
 ```{r}
@@ -29,6 +35,7 @@ args(do.call)
 do.call(myf, list(1, 1))
 ```
 
+### call
 call prepares it but does not evaluate it, and instead takes arguments separately through the ... argument
 ```{r}
 args(call)
@@ -36,10 +43,12 @@ args(call)
 eval(c1)
 ```
 
-I'll focus on do.call
+I'll focus on do.call.
+
 For better or for worse, I also will ignore the "envir" option which allows the call to be executed in a particular environment.
-For better, because it would take longer than I have to address this in enough detail to be meaningful.
-For worse because every so often really weird things can happen if you don't understand what this means.
+
+* For better, because it would take longer than I have to address this in enough detail to be meaningful.
+* For worse because every so often really weird things can happen if you don't understand what this means.
 
 # for split-apply-combine
 The most common use (perhaps) is as part of split-apply-combine, as so named and made famous by Hadley Wickham. This is what we used to do before he wrote the plyr package, and still is occassionally useful.
@@ -50,10 +59,15 @@ Here's a data frame with five groups, 10 observations of a and b for each group
 ```{r}
 set.seed(5)
 d <- data.frame(group=rep(LETTERS[1:5], each=10), a=10 + round(rnorm(50, 1)), b=11 + round(rnorm(50,1)))
+str(d)
 ## split it by group
 ds <- split(d, d$group)
 ## apply a function to each part that gets mean a, mean b, confidence interval of difference for paired t test
-out <- lapply(ds, function(di) with(di, c(mean.a=mean(a), mean.b=mean(b), t.confint=t.test(a, b, paired=TRUE)$conf.int)))
+out <- lapply(ds, function(di) with(di, 
+        c(mean.a=mean(a), 
+          mean.b=mean(b), 
+          t.confint=t.test(a, b, paired=TRUE)$conf.int)))
+out
 do.call(rbind, out)
 ```
 
@@ -96,13 +110,13 @@ Both, however, give the correct result and can be used later with summary, coef,
 # Programatically fitting models
 This is my second main use for do.call, to programatically fit different formulas.
 
-Can store formula in a character variable, itcould be a vector of options that we loop through.
+Can store formula in a character variable, it could be a vector of options that we loop through.
 ```{r}
 f <- "y ~ x"
 ## will work without do.call, but call refers to "f"
 (m1 <- lm(f, data=d))
 
-## do. call instead evaluates the f first, so call is as expected
+## do.call instead evaluates the f first, so call is as expected
 (m2 <- do.call("lm", list(as.formula(f), data=quote(d))))
 ```
 
@@ -191,7 +205,7 @@ plot(x, y)
 say we want to find the best linear fit, and standard deviation, assuming
 data is normally distributed around linear fit with constant variance
 
-$y_i ~ N(a + bx_i, s^2)$
+$y_i \sim N(a + bx_i, s^2)$
 
 want to get parameters a, b, and s that maximize corresponding likelihood
 
@@ -343,3 +357,6 @@ optim2c <- function(par, fn, extra, ...) {
 }
 optim2c(par=c(int=1, slope=1), fn=negloglik, extra=list(x=x, y=y, logsd=log(4)), hessian=TRUE)[c("par", "hessian")]
 ```
+
+# Conclusion
+Knowing how to put together functions programatically with do.call can be useful. 
