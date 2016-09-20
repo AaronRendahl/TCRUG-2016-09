@@ -1,0 +1,345 @@
+---
+title: "Constructing function calls (TCRUG-2016-09)"
+author: "Aaron Rendahl"
+date: "September 22, 2016"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# About myself...
+
+# how does one call a function programatically?
+with call and do.call
+
+say I have a function to add two numbers
+```{r}
+myf <- function(x, y) x + y
+myf(1, 1)
+```
+
+do.call evaluates the function "what", with the arguments "args" (supplied as a list)
+
+```{r}
+args(do.call)
+do.call(myf, list(1, 1))
+```
+
+call prepares it but does not evaluate it, and instead takes arguments separately through the ... argument
+```{r}
+args(call)
+(c1 <- call("myf", 1, 1))
+eval(c1)
+```
+
+I'll focus on do.call
+For better or for worse, I also will ignore the "envir" option which allows the call to be executed in a particular environment.
+For better, because it would take longer than I have to address this in enough detail to be meaningful.
+For worse because every so often really weird things can happen if you don't understand what this means.
+
+# for split-apply-combine
+The most common use (perhaps) is as part of split-apply-combine, as so named and made famous by Hadley Wickham. This is what we used to do before he wrote the plyr package, and still is occassionally useful.
+
+Say we have data that we want to split by group and apply a function to.
+
+Here's a data frame with five groups, 10 observations of a and b for each group
+```{r}
+set.seed(5)
+d <- data.frame(group=rep(LETTERS[1:5], each=10), a=10 + round(rnorm(50, 1)), b=11 + round(rnorm(50,1)))
+## split it by group
+ds <- split(d, d$group)
+## apply a function to each part that gets mean a, mean b, confidence interval of difference for paired t test
+out <- lapply(ds, function(di) with(di, c(mean.a=mean(a), mean.b=mean(b), t.confint=t.test(a, b, paired=TRUE)$conf.int)))
+do.call(rbind, out)
+```
+
+
+# more on how it works, with lm 
+(because it shows you the call itself in the output)
+
+let's make and plot some data (avoiding dollar signs...)
+```{r}
+set.seed(1)
+n <- 50
+d <- data.frame(x=round(runif(n, 0, 10), 1))
+d <- within(d, {
+    y <- round(1 + 0.9*x + rnorm(n, 0, 4), 1)
+})
+with(d, plot(x, y))
+```
+
+normally would fit model like this
+```{r}
+lm(y ~ x, data=d)
+```
+
+so with do.call, let's try this...
+```{r}
+do.call(lm, list(y~x, data=d))
+```
+
+wow, what was that!
+
+two things: 1) function call is passed in as value of argument, and 2) parameters are evaluated before sending to do.call
+
+instead send the function as a character and wrap parameters we don't want evaluated first in "quote", which simply returns its argument when evaluated
+```{r}
+do.call("lm", list(y~x, data=quote(d)))
+```
+
+Both, however, give the correct result and can be used later with summary, coef, etc, as needed. The fact that parameters are evaluated first, though, is potentially really handy!
+
+# Programatically fitting models
+This is my second main use for do.call, to programatically fit different formulas.
+
+Can store formula in a character variable, itcould be a vector of options that we loop through.
+```{r}
+f <- "y ~ x"
+## will work without do.call, but call refers to "f"
+(m1 <- lm(f, data=d))
+
+## do. call instead evaluates the f first, so call is as expected
+(m2 <- do.call("lm", list(as.formula(f), data=quote(d))))
+```
+
+doesn't matter in most contexts, but makes me a little nervous sometimes
+say we change f, then update the model (not that I use update a lot...)
+```{r}
+f <- "y ~ 1"
+update(m1)
+update(m2)
+```
+
+There are situations when you might want either, I guess, but it feels cleaner to
+me to have the actual formula I used stored rather than a generic "f". Though if you think about it, I prefer the opposite for the data argument, so...
+
+### fitting all possible (additive linear) models
+```{r}
+set.seed(16)
+v <- paste0("x", 1:5)
+for(vi in v) {
+  d[[vi]] <- round(rnorm(nrow(d), mean=10, sd=2), 1)
+}
+```
+
+```{r}
+out <- do.call(expand.grid, setNames(rep(list(c(TRUE, FALSE)), length=5), v))
+head(out)
+f <- apply(out, 1, function(x) paste(c(1, names(out)[x]), collapse=" + "))
+f <- paste("y ~", f)
+head(f)
+ms <- lapply(f, function(fi) {
+  do.call("lm", list(as.formula(fi), data=quote(d)))
+})
+out$AIC <- sapply(ms, AIC)
+summary(ms[[which.min(out$AIC)]])
+```
+
+Careful with interpreting results from using the "best" model...
+Here it comes out statistically significant at the 0.05 level (though I cherry picked the random seed). How often does this happen by random chance? I used replicate to repeat the above 1000 times; here are the proportion of best models and full models with p<0.05.
+
+```{r, echo=FALSE, cache=TRUE}
+set.seed(5)
+ps <- replicate(1000, {
+  v <- paste0("x", 1:5)
+  for(vi in v) {
+    d[[vi]] <- round(rnorm(nrow(d), mean=10, sd=2), 1)
+  }
+  out <- do.call(expand.grid, setNames(rep(list(c(TRUE, FALSE)), length=5), v))
+  f <- apply(out, 1, function(x) paste(c(1, names(out)[x]), collapse=" + "))
+  f <- paste("y ~", f)
+  ms <- lapply(f, function(fi) {
+    do.call("lm", list(as.formula(fi), data=quote(d)))
+  })
+  out$AIC <- sapply(ms, AIC)
+  mbest <- ms[[which.min(out$AIC)]]
+  if(length(coef(mbest))==1) {
+    pbest <- 1
+  } else {
+    x <- summary(mbest)
+    pbest <- pf(x$fstatistic[1L], x$fstatistic[2L], x$fstatistic[3L], lower.tail = FALSE)
+  }
+  mfull <- ms[[1]]
+  x <- summary(mfull)
+  pfull <- pf(x$fstatistic[1L], x$fstatistic[2L], x$fstatistic[3L], lower.tail = FALSE)
+  c(best=unname(pbest), full=unname(pfull))
+})
+rowMeans(ps<0.05)
+```
+
+## using do.call for optimal use of optim
+
+See also: stats4::mle and bbmle::mle2, which makes some (possibly all) of this unneeded. Still, handy to see how parameters can be passed around from function to function.
+
+making data in global environment
+in real life, this would be in a data frame
+could explore how to write functions that use variables from within data frame but not today...
+
+```{r}
+rm(list=ls())
+set.seed(1)
+n <- 50
+x <- round(runif(n, 0, 10), 1)
+y <- round(1 + 0.9*x + rnorm(n, 0, 4), 1)
+plot(x, y)
+```
+
+say we want to find the best linear fit, and standard deviation, assuming
+data is normally distributed around linear fit with constant variance
+
+$y_i ~ N(a + bx_i, s^2)$
+
+want to get parameters a, b, and s that maximize corresponding likelihood
+
+```{r}
+m1 <- lm(y ~ x)
+summary(m1)
+```
+
+I'll report log(s) instead of s itself, so that range can be over whole real line
+```{r}
+setNames(c(coef(m1), log(sqrt(sum(residuals(m1)^2)/n))), c("int", "slope", "logsd"))
+```
+
+say we want to do this "by hand"
+as an example of what to do if had more complex likelihood function
+we want to minimize the negative log likelihood
+```{r}
+negloglik <- function(int, slope, logsd, x, y) {
+    -sum(dnorm(y, mean=int + slope * x, sd=exp(logsd), log=TRUE))
+}
+```
+
+using optim is an option to do this
+but optim wants the parameters as one parameter at the beginning
+```{r}
+args(optim)
+```
+
+### method one
+positional, lengthy
+```{r}
+nll1 <- function(par, x, y) {
+    negloglik(int=par[1], slope=par[2], logsd=par[3], x=x, y=y)
+}
+optim(par=c(int=1, slope=1, logsd=log(4)), nll1, x=x, y=y)$par
+```
+### method two
+uses do.call to put them in call automatically
+```{r}
+nll2 <- function(par, x, y) {
+    do.call(negloglik, c(as.list(par), list(x=x, y=y)))
+}
+optim(par=c(int=1, slope=1, logsd=log(4)), nll2, x=x, y=y)$par
+```
+
+## Aside: combining lists
+
+combining lists seems like it should be straightforward
+here are two lists, let's combine them
+```{r}
+a1 <- list(x=1, y=2)
+a2 <- list(a=c(10,11), b=c(11,12))
+c(a1, a2)
+```
+
+but this only works if both of the things are lists,
+if not, it doesn't do what we want
+```{r}
+d <- 1:3
+c(a2, d=d)
+list(a2, d=d)
+c(a2, list(d=d))
+```
+
+the other function I used is `as.list`, which takes a vector
+and makes it into a list instead. Contrast with just `list`.
+```{r}
+a <- c(x=1, y=2)
+as.list(a)
+list(a)
+```
+
+
+### method three
+uses do.call to optimize over some, not others
+this is really why I learned about this, to be able to profile the likelihood more easily
+```{r}
+nll3 <- function(par, x, y, ...) {
+    do.call(negloglik, c(as.list(par), list(x=x, y=y), ...))
+}
+optim(par=c(int=1, slope=1), nll3, x=x, y=y, logsd=log(4))$par
+```
+
+### method four
+more generic, as all parameters could get wrapped into the ...
+```{r}
+nll4 <- function(par, ...) {
+    do.call(negloglik, c(as.list(par), list(...)))
+}
+optim(par=c(int=1, slope=1), nll4, x=x, y=y, logsd=log(4))$par
+```
+
+## more...
+OK, now we're going to "show off..."
+not that you would choose these for this example
+but might be handy in other kinds of circumstances
+
+### method five
+a helper function for optim
+```{r}
+optimhelp <- function(par, FUN, ...) {
+    do.call(FUN, c(as.list(par), list(...)))
+}
+optim(par=c(int=1, slope=1), optimhelp, FUN=negloglik, x=x, y=y, logsd=log(4))$par
+```
+
+### method six: factory
+a factory to make really generic
+ignoring issues with environments and closures right now...
+```{r}
+optfactory <- function(FUN) {
+    function(par, ...) { do.call(FUN, c(as.list(par), list(...))) }
+}
+
+nllpar <- optfactory(negloglik)
+optim(par=c(int=1, slope=1), nllpar, x=x, y=y, logsd=log(4))$par
+```
+### method seven, a new version of optim
+this automatically allows extra parameters to be sent to optim as well!
+```{r}
+optim2 <- function(par, fn, ...) {
+    ff <- function(par, ...) { do.call(fn, c(as.list(par), list(...))) }
+    optim(par=par, fn=ff, ...)
+}
+optim2(par=c(int=1, slope=1), fn=negloglik, x=x, y=y, logsd=log(4))$par
+```
+
+I suppose you could oneliner this too...
+```{r}
+optim(par=c(int=1, slope=1), fn=function(par, ...) { do.call(negloglik, c(as.list(par), list(...))) }, x=x, y=y, logsd=log(4))$par
+```
+or, can just include them as parameters,
+probably the clearest way to write the code for users
+```{r}
+optim2b <- function(par, fn, gr=NULL, ...,
+                    method = c("Nelder-Mead", "BFGS", "CG", "L-BFGS-B", "SANN", "Brent"),
+                    lower = -Inf, upper = Inf, control = list(), hessian = FALSE) {
+    ff <- function(par, ...) { do.call(fn, c(as.list(par), list(...))) }
+    optim(par=par, fn=ff, gr=gr, ..., method=method, lower=lower, upper=upper, control=control, hessian=hessian)
+}
+optim2b(par=c(int=1, slope=1), fn=negloglik, x=x, y=y, logsd=log(4), hessian=TRUE)[c("par", "hessian")]
+```
+
+or, for kicks, could show how to separate parameters for the two functions
+```{r}
+optim2c <- function(par, fn, extra, ...) {
+    ff <- function(par, extra) { do.call(fn, c(as.list(par), extra)) }
+    optim(par=par, fn=ff, extra=extra, ...)
+}
+optim2c(par=c(int=1, slope=1), fn=negloglik, extra=list(x=x, y=y, logsd=log(4)), hessian=TRUE)[c("par", "hessian")]
+```
