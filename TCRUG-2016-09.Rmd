@@ -13,10 +13,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # About myself...
 * Manager of the Statistical Consulting Center at the University of Minnesota
-* Help researchers design their studies and analyze their data
-* Also work with external companies, data analytics, etc.
+    * Help researchers design their studies and analyze their data
+    * Also work with external companies (data analytics, etc.)
 * PhD in Statistics (so not a programmer...)
-* But have used R since around 2005
+* But have used R since around 2005, just switching to Rstudio now
+    * Arc (XLisp-Stat), MacAnova, Emacs (speaks statistics)
 
 # how does one call a function programatically?
 ### with call and do.call
@@ -43,7 +44,7 @@ call
 eval(c1)
 ```
 
-I'll focus on do.call.
+Might seem that having to put parameters in a list is extra work, but we'll see makes do.call quite powerful; that's what I'll focus on.
 
 For better or for worse, I also will ignore the "envir" option which allows the call to be executed in a particular environment.
 
@@ -365,12 +366,34 @@ optim2b(par=c(int=1, slope=1), fn=negloglik, x=x, y=y, logsd=log(4), hessian=TRU
 
 or, for kicks, could show how to separate parameters for the two functions
 ```{r}
-optim2c <- function(par, fn, extra, ...) {
-    ff <- function(par, extra) { do.call(fn, c(as.list(par), extra)) }
-    optim(par=par, fn=ff, extra=extra, ...)
+optim2c <- function(par, fn, funpars, optimpars) {
+    ff <- function(par, more) { do.call(fn, c(as.list(par), more)) }
+    do.call(optim, c(list(par=par, fn=ff, more=funpars), optimpars))
 }
-optim2c(par=c(int=1, slope=1), fn=negloglik, extra=list(x=x, y=y, logsd=log(4)), hessian=TRUE)[c("par", "hessian")]
+optim2c(par=c(int=1, slope=1), fn=negloglik, 
+        funpars=list(x=x, y=y, logsd=log(4)), 
+        optimpars=list(hessian=TRUE))[c("par", "hessian")]
 ```
 
 # Conclusion
-Knowing how to put together functions programatically with do.call can be useful. 
+Putting together functions programatically with do.call can be useful
+
+* for split-apply-combine
+* for building models
+* for more optimal use of optim
+* and more...
+
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+<br>
+
+thanks!

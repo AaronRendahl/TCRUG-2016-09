@@ -126,11 +126,16 @@ $(document).ready(function () {
 <div id="about-myself" class="section level1">
 <h1>About myself…</h1>
 <ul>
-<li>Manager of the Statistical Consulting Center at the University of Minnesota</li>
+<li>Manager of the Statistical Consulting Center at the University of Minnesota
+<ul>
 <li>Help researchers design their studies and analyze their data</li>
-<li>Also work with external companies, data analytics, etc.</li>
+<li>Also work with external companies (data analytics, etc.)</li>
+</ul></li>
 <li>PhD in Statistics (so not a programmer…)</li>
-<li>But have used R since around 2005</li>
+<li>But have used R since around 2005, just switching to Rstudio now
+<ul>
+<li>Arc (XLisp-Stat), MacAnova, Emacs (speaks statistics)</li>
+</ul></li>
 </ul>
 </div>
 <div id="how-does-one-call-a-function-programatically" class="section level1">
@@ -160,7 +165,7 @@ myf(1, 1)</code></pre>
 <pre><code>## myf(1, 1)</code></pre>
 <pre class="r"><code>eval(c1)</code></pre>
 <pre><code>## [1] 2</code></pre>
-<p>I’ll focus on do.call.</p>
+<p>Might seem that having to put parameters in a list is extra work, but we’ll see makes do.call quite powerful; that’s what I’ll focus on.</p>
 <p>For better or for worse, I also will ignore the “envir” option which allows the call to be executed in a particular environment.</p>
 <ul>
 <li>For better, because it would take longer than I have to address this in enough detail to be meaningful.</li>
@@ -646,11 +651,13 @@ optim2b(par=c(int=1, slope=1), fn=negloglik, x=x, y=y, logsd=log(4), hessian=TRU
 ## int    3.1250  16.6375
 ## slope 16.6375 111.1987</code></pre>
 <p>or, for kicks, could show how to separate parameters for the two functions</p>
-<pre class="r"><code>optim2c &lt;- function(par, fn, extra, ...) {
-    ff &lt;- function(par, extra) { do.call(fn, c(as.list(par), extra)) }
-    optim(par=par, fn=ff, extra=extra, ...)
+<pre class="r"><code>optim2c &lt;- function(par, fn, funpars, optimpars) {
+    ff &lt;- function(par, more) { do.call(fn, c(as.list(par), more)) }
+    do.call(optim, c(list(par=par, fn=ff, more=funpars), optimpars))
 }
-optim2c(par=c(int=1, slope=1), fn=negloglik, extra=list(x=x, y=y, logsd=log(4)), hessian=TRUE)[c(&quot;par&quot;, &quot;hessian&quot;)]</code></pre>
+optim2c(par=c(int=1, slope=1), fn=negloglik, 
+        funpars=list(x=x, y=y, logsd=log(4)), 
+        optimpars=list(hessian=TRUE))[c(&quot;par&quot;, &quot;hessian&quot;)]</code></pre>
 <pre><code>## $par
 ##       int     slope 
 ## 1.2243274 0.9305031 
@@ -664,7 +671,15 @@ optim2c(par=c(int=1, slope=1), fn=negloglik, extra=list(x=x, y=y, logsd=log(4)),
 </div>
 <div id="conclusion" class="section level1">
 <h1>Conclusion</h1>
-<p>Knowing how to put together functions programatically with do.call can be useful.</p>
+<p>Putting together functions programatically with do.call can be useful</p>
+<ul>
+<li>for split-apply-combine</li>
+<li>for building models</li>
+<li>for more optimal use of optim</li>
+<li>and more…</li>
+</ul>
+<p><br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br> <br></p>
+<p>thanks!</p>
 </div>
 
 
