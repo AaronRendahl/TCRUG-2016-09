@@ -38,7 +38,7 @@ do.call(myf, list(1, 1))
 ### call
 call prepares it but does not evaluate it, and instead takes arguments separately through the ... argument
 ```{r}
-args(call)
+call
 (c1 <- call("myf", 1, 1))
 eval(c1)
 ```
@@ -55,19 +55,30 @@ The most common use (perhaps) is as part of split-apply-combine, as so named and
 
 Say we have data that we want to split by group and apply a function to.
 
-Here's a data frame with five groups, 10 observations of a and b for each group
+Here's a data frame with five groups, 10 observations of a and b for each group.
 ```{r}
 set.seed(5)
-d <- data.frame(group=rep(LETTERS[1:5], each=10), a=10 + round(rnorm(50, 1)), b=11 + round(rnorm(50,1)))
-str(d)
+d <- data.frame(group = rep(LETTERS[1:5], each=10), 
+                    a = 10 + round(rnorm(50, 1)), 
+                    b = 11 + round(rnorm(50, 1)))
 ## split it by group
 ds <- split(d, d$group)
-## apply a function to each part that gets mean a, mean b, confidence interval of difference for paired t test
+## apply a function to each part that gets mean a, mean b, 
+## and confidence interval of difference for paired t test
 out <- lapply(ds, function(di) with(di, 
         c(mean.a=mean(a), 
           mean.b=mean(b), 
           t.confint=t.test(a, b, paired=TRUE)$conf.int)))
 out
+```
+
+Instead of
+```{r}
+rbind(out$A, out$B, out$C, out$D, out$E)
+```
+
+Use do.call
+```{r}
 do.call(rbind, out)
 ```
 
@@ -254,6 +265,7 @@ optim(par=c(int=1, slope=1, logsd=log(4)), nll2, x=x, y=y)$par
 ## Aside: combining lists
 
 combining lists seems like it should be straightforward
+
 here are two lists, let's combine them
 ```{r}
 a1 <- list(x=1, y=2)
@@ -262,6 +274,7 @@ c(a1, a2)
 ```
 
 but this only works if both of the things are lists,
+
 if not, it doesn't do what we want
 ```{r}
 d <- 1:3
@@ -281,6 +294,7 @@ list(a)
 
 ### method three
 uses do.call to optimize over some, not others
+
 this is really why I learned about this, to be able to profile the likelihood more easily
 ```{r}
 nll3 <- function(par, x, y, ...) {
